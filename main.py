@@ -1,66 +1,79 @@
 """
-Robô de teste — verifica a home da Claro (HTTP 200) e depois permanece ativo por 5 minutos.
+Robô de teste — abre a home da Claro no Chromium (Playwright) e valida HTTP 200.
 
-O Agent clona este repositório e executa este arquivo (stdlib apenas).
-timeout_segundos no agendamento deve ser >= 360 (ex.: 3600).
+Depois mantém o navegador aberto por alguns minutos (útil para demo e logs no dashboard).
+O Agent clona o repositório, roda pip + playwright install quando há playwright no requirements.
 """
 from __future__ import annotations
 
+import os
 import sys
 import time
-import urllib.error
-import urllib.request
 
-# URL de teste (home institucional)
+from playwright.sync_api import sync_playwright
+
+# Página alvo da demonstração
 URL_CLARO = "https://www.claro.com.br/"
 
-# Fase extra: manter o processo vivo para testar timeout / logs no dashboard
-DURACAO_EXTRA_SEG = 5 * 60  # 5 minutos
-INTERVALO_LOG_SEG = 30    # a cada 30s um print (aparece nos logs da execução)
+# Fase extra: processo vivo para timeout / logs (ajuste se o agendamento tiver timeout menor)
+DURACAO_EXTRA_SEG = 5 * 60
+INTERVALO_LOG_SEG = 30
+
+
+def _headless() -> bool:
+    """Em VM sem interface gráfica, use headless=true (padrão). Para ver o browser na tela: PLAYWRIGHT_HEADLESS=false."""
+    v = os.environ.get("PLAYWRIGHT_HEADLESS", "true").strip().lower()
+    return v in ("1", "true", "yes", "on")
 
 
 def main() -> None:
-    # User-Agent: alguns sites bloqueiam pedido sem navegador “de verdade”
-    pedido = urllib.request.Request(
-        URL_CLARO,
-        headers={"User-Agent": "OrquestradorClaro-RPA-Test/1.0"},
-        method="GET",
-    )
-    try:
-        with urllib.request.urlopen(pedido, timeout=30) as resposta:
-            codigo = resposta.getcode()
-    except urllib.error.HTTPError as e:
-        print(f"ERRO HTTP: {e.code} — {e.reason}")
-        sys.exit(1)
-    except urllib.error.URLError as e:
-        print(f"ERRO de rede/URL: {e.reason}")
-        sys.exit(1)
-    except OSError as e:
-        print(f"ERRO ao acessar o site: {e}")
-        sys.exit(1)
+    headless = _headless()
+    print(f"Iniciando Playwright — Chromium (headless={headless}). URL: {URL_CLARO}")
 
-    if codigo != 200:
-        print(f"ERRO: status inesperado {codigo}")
-        sys.exit(1)
+    with sync_playwright() as p:
+        # Lança o navegador (o agente já rodou playwright install chromium quando necessário)
+        browser = p.chromium.launch(headless=headless)
+        context = browser.new_context(
+            locale="pt-BR",
+            user_agent="OrquestradorClaro-RPA-Test/Playwright/1.0",
+        )
+        page = context.new_page()
+        try:
+            # Navegação principal: espera DOM (mais estável que networkidle em sites grandes)
+            response = page.goto(URL_CLARO, wait_until="domcontentloaded", timeout=60_000)
+        except Exception as e:
+            print(f"ERRO ao carregar a página: {e}")
+            context.close()
+            browser.close()
+            sys.exit(1)
 
-    print(f"OK — {URL_CLARO} respondeu HTTP 200")
-    print(
-        f"Iniciando espera de {DURACAO_EXTRA_SEG // 60} minutos "
-        f"(logs a cada {INTERVALO_LOG_SEG}s). Ajuste DURACAO_EXTRA_SEG no código se quiser."
-    )
+        status = response.status if response else 0
+        if status != 200:
+            print(f"ERRO: HTTP {status} (esperado 200)")
+            context.close()
+            browser.close()
+            sys.exit(1)
 
-    fim = time.monotonic() + DURACAO_EXTRA_SEG
-    passo = 0
-    while time.monotonic() < fim:
-        dormir = min(INTERVALO_LOG_SEG, fim - time.monotonic())
-        if dormir <= 0:
-            break
-        time.sleep(dormir)
-        passo += 1
-        restante = max(0, int(fim - time.monotonic()))
-        print(f"Ainda em execução… passo {passo} — ~{restante}s restantes")
+        titulo = page.title()
+        print(f"OK — página carregada (HTTP 200). Título: {titulo[:160]!r}")
 
-    print("Espera de 5 minutos concluída. Encerrando com sucesso.")
+        # Mantém sessão aberta com logs periódicos (aparecem em TB_EXECUTION_LOGS)
+        fim = time.monotonic() + DURACAO_EXTRA_SEG
+        passo = 0
+        while time.monotonic() < fim:
+            dormir = min(INTERVALO_LOG_SEG, fim - time.monotonic())
+            if dormir <= 0:
+                break
+            time.sleep(dormir)
+            passo += 1
+            restante = max(0, int(fim - time.monotonic()))
+            print(f"Ainda em execução… passo {passo} — ~{restante}s restantes (aba Claro aberta).")
+
+        print("Espera concluída. Fechando navegador.")
+        context.close()
+        browser.close()
+
+    print("Encerrando com sucesso.")
     sys.exit(0)
 
 
