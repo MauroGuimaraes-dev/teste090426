@@ -1,0 +1,2 @@
+# Playwright: o Agent detecta a palavra "playwright" e roda playwright install chromium após o pip.
+playwright>=1.49.0,<2
