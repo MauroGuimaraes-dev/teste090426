@@ -16,8 +16,8 @@ from playwright.sync_api import sync_playwright
 URL_CLARO = "https://www.claro.com.br/"
 
 # Fase extra: processo vivo para timeout / logs (ajuste se o agendamento tiver timeout menor)
-DURACAO_EXTRA_SEG = 5 * 60
-INTERVALO_LOG_SEG = 30
+DURACAO_EXTRA_SEG = 1 * 10
+INTERVALO_LOG_SEG = 5
 
 
 def _headless() -> bool:
