@@ -28,11 +28,21 @@ def _headless() -> bool:
 
 def main() -> None:
     headless = _headless()
-    print(f"Iniciando Playwright — Chromium (headless={headless}). URL: {URL_CLARO}")
+    # Deixa explícito no painel: headless=True não abre janela (PLAYWRIGHT_HEADLESS=false no agente)
+    modo = "sem janela (headless)" if headless else "com janela visível"
+    print(f"Iniciando Playwright — Chromium ({modo}). URL: {URL_CLARO}")
+    if not headless:
+        print(
+            "Dica: se não aparecer janela, use Alt+Tab ou veja 'Chromium' na barra de tarefas / outro monitor."
+        )
+
+    # Com headless=False, argumentos extras reduzem chance da janela abrir minimizada ou fora da tela
+    launch_args: list[str] = []
+    if not headless:
+        launch_args = ["--start-maximized", "--window-position=0,0"]
 
     with sync_playwright() as p:
-        # Lança o navegador (o agente já rodou playwright install chromium quando necessário)
-        browser = p.chromium.launch(headless=headless)
+        browser = p.chromium.launch(headless=headless, args=launch_args)
         context = browser.new_context(
             locale="pt-BR",
             user_agent="OrquestradorClaro-RPA-Test/Playwright/1.0",
